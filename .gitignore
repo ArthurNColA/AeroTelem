@@ -1,0 +1,19 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# Compiled binaries
+*.exe
+*.out
+*.o
+*.obj
+*.a
+*.so
+
+# IDE & local training notes (kept locally, not pushed to GitHub)
+.vscode/
+.idea/
+docs/
+*.swp
+.DS_Store
