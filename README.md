@@ -12,6 +12,8 @@ Lightweight binary telemetry protocol parser and real-time driver written in **C
   * Non-blocking byte-by-byte parser (`WAIT_HEADER_1` $\rightarrow$ `WAIT_HEADER_2` $\rightarrow$ `READ_PAYLOAD`) resilient to line noise and false header starts.
 * **Real-Time Sensor Filtering (`MovingAverageFilter`)**:
   * Configurable sliding-window moving average filter using `std::deque<int16_t>` with 32-bit signed accumulation (`int32_t`) to prevent integer overflow.
+* **Telemetry Driver & Flight Safety Monitor (`TelemetryDriver`)**:
+  * End-to-end acquisition pipeline combining byte-stream parsing, dual-axis attitude filtering, and prioritized flight safety diagnostics (`CRITICAL_ANGLE`, `LOW_BATTERY`, `NOMINAL`).
 
 ## Build & Run Tests (Linux / WSL2)
 

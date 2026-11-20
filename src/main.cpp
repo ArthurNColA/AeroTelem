@@ -9,7 +9,7 @@ int main() {
     TelemetryData input = {-125, 340, 87};
     uint8_t frame[FRAME_SIZE] = {0};
 
-    std::cout << "=== [1/3] Binary Frame Encoder / Decoder Test ===" << std::endl;
+    std::cout << "=== [1/4] Binary Frame Encoder / Decoder Test ===" << std::endl;
     encode_frame(input, frame);
 
     TelemetryData decoded = {0, 0, 0};
@@ -25,7 +25,7 @@ int main() {
     }
     std::cout << "[PASS] Binary protocol encode/decode & XOR checksum verified." << std::endl;
 
-    std::cout << "\n=== [2/3] UART Stream State Machine (FrameParser) Test ===" << std::endl;
+    std::cout << "\n=== [2/4] UART Stream State Machine (FrameParser) Test ===" << std::endl;
     uint8_t frame1[FRAME_SIZE];
     uint8_t frame2[FRAME_SIZE];
     encode_frame({-50, 120, 95}, frame1);
@@ -56,26 +56,61 @@ int main() {
     }
     std::cout << "[PASS] Noisy UART byte-stream state machine verified (2/2 frames extracted)." << std::endl;
 
-    std::cout << "\n=== [3/3] Moving Average Filter Test ===" << std::endl;
+    std::cout << "\n=== [3/4] Moving Average Filter Test ===" << std::endl;
     MovingAverageFilter roll_filter(4);
     std::vector<int16_t> noisy_samples = {100, 120, 80, 100, 140};
     int16_t last_filtered = 0;
 
     for (size_t i = 0; i < noisy_samples.size(); ++i) {
         last_filtered = roll_filter.update(noisy_samples[i]);
-        std::cout << "  Sample #" << (i + 1) << " = " << std::setw(4) << noisy_samples[i]
-                  << "  ->  Filtered (N=4) = " << last_filtered << std::endl;
     }
 
-    if (last_filtered == 110) {
-        roll_filter.reset();
-        if (roll_filter.update(50) == 50) {
-            std::cout << "[PASS] MovingAverageFilter verified." << std::endl;
-            std::cout << "\nAll AeroTelem test suites passed successfully." << std::endl;
-            return 0;
+    if (last_filtered != 110) {
+        std::cout << "[FAIL] MovingAverageFilter test failed (got " << last_filtered << ", expected 110)." << std::endl;
+        return 1;
+    }
+    roll_filter.reset();
+    if (roll_filter.update(50) != 50) {
+        std::cout << "[FAIL] MovingAverageFilter reset test failed." << std::endl;
+        return 1;
+    }
+    std::cout << "[PASS] MovingAverageFilter verified." << std::endl;
+
+    std::cout << "\n=== [4/4] TelemetryDriver Integration & Flight Safety Test ===" << std::endl;
+    TelemetryDriver driver(2); // Sliding window of 2 samples
+
+    auto send_telemetry = [&](const TelemetryData& d) {
+        uint8_t raw[FRAME_SIZE];
+        encode_frame(d, raw);
+        for (int i = 0; i < FRAME_SIZE; ++i) {
+            driver.process_byte(raw[i]);
         }
+    };
+
+    // Frame 1: Roll = 100, Pitch = -200, Batt = 80% -> Nominal
+    send_telemetry({100, -200, 80});
+    if (driver.valid_frames() != 1 || driver.evaluate_safety() != SafetyStatus::NOMINAL) {
+        std::cout << "[FAIL] Frame 1 nominal state check failed." << std::endl;
+        return 1;
     }
 
-    std::cout << "[FAIL] MovingAverageFilter test failed (got " << last_filtered << ", expected 110)." << std::endl;
-    return 1;
+    // Frame 2: Roll = 140 (avg with 100 = 120), Pitch = -100 (avg with -200 = -150), Batt = 15% -> Low Battery
+    send_telemetry({140, -100, 15});
+    if (driver.latest_data().roll_decideg != 120 ||
+        driver.latest_data().pitch_decideg != -150 ||
+        driver.evaluate_safety() != SafetyStatus::LOW_BATTERY) {
+        std::cout << "[FAIL] Frame 2 filtering or LOW_BATTERY check failed." << std::endl;
+        return 1;
+    }
+
+    // Frame 3: Roll = -900 (avg with 140 = -380), Pitch = 1100 (avg with -100 = +500 > 450), Batt = 15% -> Critical Angle
+    send_telemetry({-900, 1100, 15});
+    if (driver.evaluate_safety() != SafetyStatus::CRITICAL_ANGLE) {
+        std::cout << "[FAIL] Frame 3 CRITICAL_ANGLE priority check failed." << std::endl;
+        return 1;
+    }
+
+    std::cout << "[PASS] TelemetryDriver pipeline & safety monitor verified (" << driver.valid_frames() << " frames processed)." << std::endl;
+    std::cout << "\nAll AeroTelem test suites passed successfully." << std::endl;
+    return 0;
 }

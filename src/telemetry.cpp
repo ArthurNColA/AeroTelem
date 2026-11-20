@@ -1,8 +1,9 @@
 #include "telemetry.hpp"
+#include <cmath>
 
 namespace aerotelem {
 
-// Format de la trame binaire (8 octets) :
+// Binary frame format (8 bytes):
 // [0: 0xAA] [1: 0x55] [2: Roll MSB] [3: Roll LSB] [4: Pitch MSB] [5: Pitch LSB] [6: Batt %] [7: Checksum XOR(2..6)]
 void encode_frame(const TelemetryData& data, uint8_t* buffer) {
     buffer[0] = 0xAA; // Header 1
@@ -82,7 +83,7 @@ bool FrameParser::push_byte(uint8_t byte, TelemetryData& out_data) {
     return false;
 }
 
-// Filtre à moyenne glissante (MovingAverageFilter)
+// Sliding-window Moving Average Filter
 MovingAverageFilter::MovingAverageFilter(size_t window_size) {
     if (window_size == 0) {
         window_size_ = 1;
@@ -105,6 +106,44 @@ int16_t MovingAverageFilter::update(int16_t new_sample) {
 
 void MovingAverageFilter::reset() {
     history_.clear();
+}
+
+// High-level Telemetry Driver
+TelemetryDriver::TelemetryDriver(size_t filter_window)
+    : parser_(),
+      roll_filter_(filter_window),
+      pitch_filter_(filter_window),
+      latest_data_{0, 0, 0},
+      valid_frames_(0) {
+}
+
+bool TelemetryDriver::process_byte(uint8_t byte) {
+    if (parser_.push_byte(byte, latest_data_)) {
+        latest_data_.roll_decideg = roll_filter_.update(latest_data_.roll_decideg);
+        latest_data_.pitch_decideg = pitch_filter_.update(latest_data_.pitch_decideg);
+        valid_frames_++;
+        return true;
+    }
+    return false;
+}
+
+SafetyStatus TelemetryDriver::evaluate_safety() const {
+    if (std::abs(latest_data_.roll_decideg) > MAX_SAFE_ANGLE_DECIDEG ||
+        std::abs(latest_data_.pitch_decideg) > MAX_SAFE_ANGLE_DECIDEG) {
+        return SafetyStatus::CRITICAL_ANGLE;
+    }
+    if (latest_data_.battery_pct < LOW_BATTERY_THRESHOLD) {
+        return SafetyStatus::LOW_BATTERY;
+    }
+    return SafetyStatus::NOMINAL;
+}
+
+const TelemetryData& TelemetryDriver::latest_data() const {
+    return latest_data_;
+}
+
+uint32_t TelemetryDriver::valid_frames() const {
+    return valid_frames_;
 }
 
 } // namespace aerotelem
