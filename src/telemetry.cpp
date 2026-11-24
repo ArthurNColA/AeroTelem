@@ -146,4 +146,19 @@ uint32_t TelemetryDriver::valid_frames() const {
     return valid_frames_;
 }
 
+// Thread-safe Telemetry Wrapper (Multi-threading protection with std::mutex)
+ThreadSafeTelemetry::ThreadSafeTelemetry(size_t filter_window)
+    : driver_(filter_window) {
+}
+
+bool ThreadSafeTelemetry::process_byte(uint8_t byte) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return driver_.process_byte(byte);
+}
+
+TelemetrySnapshot ThreadSafeTelemetry::get_snapshot() const {
+    std::lock_guard<std::mutex> lock(mtx_);
+    return TelemetrySnapshot{driver_.latest_data(), driver_.evaluate_safety(), driver_.valid_frames()};
+}
+
 } // namespace aerotelem

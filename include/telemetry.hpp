@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <deque>
+#include <mutex>
 
 namespace aerotelem {
 
@@ -37,6 +38,13 @@ enum class SafetyStatus {
     NOMINAL,
     LOW_BATTERY,
     CRITICAL_ANGLE
+};
+
+// Complete thread-safe snapshot of the current telemetry state
+struct TelemetrySnapshot {
+    TelemetryData data;
+    SafetyStatus status;
+    uint32_t valid_frames;
 };
 
 // Binary frame encoding and decoding
@@ -77,20 +85,8 @@ private:
 class TelemetryDriver {
 public:
     explicit TelemetryDriver(size_t filter_window);
-
-    /**
-     * Feeds a single raw byte from the serial stream.
-     * When a complete valid frame is decoded, filters roll & pitch, updates latest_data_,
-     * increments valid_frames_, and returns true.
-     */
     bool process_byte(uint8_t byte);
-
-    /**
-     * Evaluates current flight safety status based on latest filtered telemetry.
-     * Priority: CRITICAL_ANGLE (|roll| > 450 or |pitch| > 450) > LOW_BATTERY (< 20%) > NOMINAL.
-     */
     SafetyStatus evaluate_safety() const;
-
     const TelemetryData& latest_data() const;
     uint32_t valid_frames() const;
 
@@ -100,6 +96,22 @@ private:
     MovingAverageFilter pitch_filter_;
     TelemetryData latest_data_;
     uint32_t valid_frames_;
+};
+
+// Thread-safe wrapper around TelemetryDriver for multi-threaded UART RX / ROS 2 publishing
+class ThreadSafeTelemetry {
+public:
+    explicit ThreadSafeTelemetry(size_t filter_window);
+
+    // Called by the high-frequency UART RX thread
+    bool process_byte(uint8_t byte);
+
+    // Called by the consumer / UI / ROS 2 publisher thread to get a consistent snapshot
+    TelemetrySnapshot get_snapshot() const;
+
+private:
+    TelemetryDriver driver_;
+    mutable std::mutex mtx_;
 };
 
 } // namespace aerotelem

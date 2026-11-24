@@ -14,6 +14,8 @@ Lightweight binary telemetry protocol parser and real-time driver written in **C
   * Configurable sliding-window moving average filter using `std::deque<int16_t>` with 32-bit signed accumulation (`int32_t`) to prevent integer overflow.
 * **Telemetry Driver & Flight Safety Monitor (`TelemetryDriver`)**:
   * End-to-end acquisition pipeline combining byte-stream parsing, dual-axis attitude filtering, and prioritized flight safety diagnostics (`CRITICAL_ANGLE`, `LOW_BATTERY`, `NOMINAL`).
+* **Multi-Threaded Concurrency (`ThreadSafeTelemetry`)**:
+  * Thread-safe synchronization between high-rate UART RX acquisition and consumer threads using RAII mutex locking (`std::mutex`, `std::lock_guard`).
 
 ## Build & Run Tests (Linux / WSL2)
 
